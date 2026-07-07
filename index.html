@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TLS &amp; TDE — Oracle 19c EE Fleet</title>
+<style>
+  :root{
+    --bg:#0b1020;--bg-soft:#111a33;--card:#141f3d;--line:#243456;
+    --ink:#eef2ff;--muted:#9aa8c8;--accent:#4f7cff;--accent-2:#38d3b0;--amber:#f4b740;
+    --radius:16px;--shadow:0 18px 50px -20px rgba(0,0,0,.6);
+    --font:'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+    --mono:'SF Mono',ui-monospace,'Cascadia Code',Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root{--bg:#f4f6fc;--bg-soft:#eaeef9;--card:#ffffff;--line:#e2e8f5;
+      --ink:#141c33;--muted:#5a6785;--shadow:0 18px 50px -24px rgba(30,50,110,.25);}
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:var(--font);background:var(--bg);color:var(--ink);line-height:1.55;-webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(900px 500px at 85% -8%,rgba(79,124,255,.16),transparent 60%),radial-gradient(700px 500px at 0% 10%,rgba(56,211,176,.10),transparent 55%);
+    background-attachment:fixed;}
+  .wrap{max-width:980px;margin:0 auto;padding:0 24px}
+  a{color:inherit;text-decoration:none}
+
+  header{padding:60px 0 34px}
+  .badge{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-2);
+    background:color-mix(in srgb,var(--accent-2) 12%,transparent);border:1px solid color-mix(in srgb,var(--accent-2) 30%,transparent);padding:6px 12px;border-radius:999px;}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--accent-2);box-shadow:0 0 10px var(--accent-2)}
+  h1{font-size:clamp(2rem,5vw,3.2rem);line-height:1.06;margin:20px 0 14px;letter-spacing:-.02em}
+  h1 .grad{background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lead{font-size:1.12rem;color:var(--muted);max-width:680px}
+  .meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}
+  .chip{font-size:13px;color:var(--muted);background:var(--bg-soft);border:1px solid var(--line);padding:7px 13px;border-radius:10px;display:inline-flex;gap:8px;align-items:center}
+  .chip b{color:var(--ink);font-weight:600}
+
+  section{padding:18px 0}
+  h2{font-size:1.5rem;margin:30px 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--muted);margin-bottom:18px;font-size:.98rem}
+
+  .tracks{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:640px){.tracks{grid-template-columns:1fr}}
+  .track{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow)}
+  .track .ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-size:21px;margin-bottom:14px;
+    background:color-mix(in srgb,var(--accent) 14%,transparent);border:1px solid color-mix(in srgb,var(--accent) 26%,transparent)}
+  .track h3{font-size:1.12rem;margin-bottom:6px}
+  .track p{font-size:.93rem;color:var(--muted);margin-bottom:12px}
+  .track ul{list-style:none;font-size:.88rem;color:var(--muted);display:grid;gap:6px}
+  .track li{padding-left:18px;position:relative}
+  .track li::before{content:"›";position:absolute;left:2px;color:var(--accent-2);font-weight:700}
+
+  .docs{display:grid;gap:10px}
+  .doc{display:grid;grid-template-columns:52px 1fr auto;gap:16px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 18px;transition:border-color .16s ease,transform .16s ease}
+  .doc:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));transform:translateX(3px)}
+  .doc .num{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;font:700 15px var(--mono);background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#04122c}
+  .doc h4{font-size:.98rem;margin-bottom:2px}
+  .doc p{font-size:.85rem;color:var(--muted)}
+  .doc .arw{color:var(--muted);font-size:1.1rem}
+
+  .scripts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+  .sc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+  .sc h4{font:600 13px var(--mono);color:var(--accent);margin-bottom:10px;letter-spacing:.02em}
+  .sc ul{list-style:none;display:grid;gap:5px;font:12px/1.5 var(--mono);color:var(--muted)}
+  .sc code{color:var(--ink)}
+
+  .status{display:flex;gap:12px;align-items:flex-start;background:color-mix(in srgb,var(--accent-2) 8%,transparent);border:1px solid color-mix(in srgb,var(--accent-2) 22%,transparent);
+    padding:16px 18px;border-radius:12px;margin-top:14px;font-size:.92rem;color:var(--muted)}
+  .status .ok{color:var(--accent-2);font-weight:700;white-space:nowrap}
+  .status b{color:var(--ink);font-weight:600}
+
+  footer{padding:40px 0 60px;color:var(--muted);font-size:.85rem;border-top:1px solid var(--line);margin-top:38px;text-align:center}
+  footer code{font-family:var(--mono);color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <span class="badge"><span class="dot"></span>Oracle 19c EE · AIX 7.2 / POWER · non-RAC</span>
+    <h1>SQL*Net <span class="grad">TLS &amp; TDE</span> for the fleet</h1>
+    <p class="lead">Guide and script templates for introducing transport encryption (TCPS) and Transparent Data Encryption across a large fleet of Oracle 19c databases — mixed non-CDB and CDB/PDB, Data Guard standbys, and a Java/OCI/APEX application stack behind an internal enterprise CA.</p>
+    <div class="meta">
+      <span class="chip"><b>TLS</b> TCPS wallets &amp; CSR workflow</span>
+      <span class="chip"><b>TDE</b> ASO-licensed, software keystores</span>
+      <span class="chip"><b>DG</b> physical standbys</span>
+      <span class="chip"><b>Drivers</b> DORA · PCI</span>
+    </div>
+  </header>
+
+  <section>
+    <div class="tracks">
+      <div class="track">
+        <div class="ic">🛡️</div>
+        <h3>Track 1 — TLS (TCPS)</h3>
+        <p>Encrypt SQL*Net traffic in flight against the internal enterprise CA.</p>
+        <ul>
+          <li>Wallet creation + CSR signing workflow</li>
+          <li>listener / sqlnet / tnsnames fragments</li>
+          <li>JDBC-thin, OCI, ORDS &amp; DB-link clients</li>
+          <li>Data Guard redo transport over TCPS</li>
+          <li>Certificate rotation &amp; troubleshooting</li>
+        </ul>
+      </div>
+      <div class="track">
+        <div class="ic">🔒</div>
+        <h3>Track 2 — TDE</h3>
+        <p>Encrypt datafiles, redo and backups at rest, keystore-managed.</p>
+        <ul>
+          <li>Key management: OKV/HSM vs software keystores</li>
+          <li>Conversion matrix: online / offline / standby-first</li>
+          <li>Data Guard keystore sync specifics</li>
+          <li>AIX / POWER performance considerations</li>
+          <li>MEK rotation &amp; aftercare</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Documents</h2>
+    <p class="sub">Read in order — program framing through to fleet rollout.</p>
+    <div class="docs">
+      <a class="doc" href="docs/00-overview.md"><div class="num">00</div><div><h4>Overview</h4><p>Program goals, DORA/PCI drivers, two independent tracks, ANO interim option, licensing, wave model.</p></div><div class="arw">→</div></a>
+      <a class="doc" href="docs/01-key-management-decision.md"><div class="num">01</div><div><h4>Key management decision</h4><p>OKV/HSM vs local software keystores; conventions for <code>WALLET_ROOT</code>, layout, backup, custody.</p></div><div class="arw">→</div></a>
+      <a class="doc" href="docs/02-tls-guide.md"><div class="num">02</div><div><h4>TLS guide</h4><p>Wallets, CSR workflow, listener/sqlnet, JDBC/OCI/ORDS clients, DB links, DG redo, rotation, troubleshooting.</p></div><div class="arw">→</div></a>
+      <a class="doc" href="docs/03-tde-guide.md"><div class="num">03</div><div><h4>TDE guide</h4><p>Concepts, conversion decision matrix, Data Guard specifics, AIX/POWER performance, aftercare.</p></div><div class="arw">→</div></a>
+      <a class="doc" href="docs/04-rollout-plan.md"><div class="num">04</div><div><h4>Rollout plan</h4><p>Waves, pilot measurements, app coordination, per-DB runbooks, rollback, acceptance criteria.</p></div><div class="arw">→</div></a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Scripts</h2>
+    <p class="sub">ksh shell (AIX-safe, no bash-isms) and SQL*Plus templates.</p>
+    <div class="scripts">
+      <div class="sc"><h4>scripts/tls/</h4><ul>
+        <li><code>01</code> create TLS wallet + CSR</li>
+        <li><code>02</code> listener/sqlnet/tns fragments</li>
+        <li><code>03</code> verify TCPS (.sh / .sql)</li>
+      </ul></div>
+      <div class="sc"><h4>scripts/tde/</h4><ul>
+        <li><code>01</code> configure WALLET_ROOT</li>
+        <li><code>02</code> keystore + MEK</li>
+        <li><code>03</code> online encrypt generator</li>
+        <li><code>04</code> TDE status report</li>
+        <li><code>05</code> MEK rotation</li>
+      </ul></div>
+      <div class="sc"><h4>scripts/dg/</h4><ul>
+        <li><code>sync_wallet_to_standby.sh</code></li>
+        <li>keystore sync primary → standby</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="status">
+      <span class="ok">● Validated</span>
+      <div>The TDE SQL chain (01 → 02 → online encrypt → 04 → 05) and the TLS wallet script + TCPS config + verify SQL were run <b>end-to-end on a 19.27 Linux CDB</b> (2026-07-07). Key verified facts: <code>FILE_NAME_CONVERT=NONE</code> fails on OMF; the DB's <b>sqlnet.ora</b> needs <code>WALLET_LOCATION</code> for TCPS (else ORA-28865); only one <code>WALLET_LOCATION</code> is honored (SEPS conflict); <code>CONTAINER=ALL</code> rotation creates untagged keys. RU/AIX-specific items remain to confirm on the real fleet.</div>
+    </div>
+  </section>
+
+  <footer>
+    <code>csob_tls_tde</code> · SQL*Net TLS &amp; Transparent Data Encryption for an Oracle 19c EE fleet on AIX 7.2.
+  </footer>
+
+</div>
+</body>
+</html>
