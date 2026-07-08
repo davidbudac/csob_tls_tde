@@ -19,6 +19,8 @@ the TDE keystore (see the TDE track) and lives in its own directory
 
 ## Table of Contents
 
+*New to TLS? Start with [TLS for DBAs — a gentle introduction](#tls-for-dbas--a-gentle-introduction) below.*
+
 1. [Concepts & decisions](#1-concepts--decisions)
 2. [Wallet strategy](#2-wallet-strategy)
 3. [CSR workflow with the internal CA](#3-csr-workflow-with-the-internal-ca)
@@ -33,6 +35,77 @@ the TDE keystore (see the TDE track) and lives in its own directory
 12. [Certificate rotation & monitoring](#12-certificate-rotation--monitoring)
 13. [Pitfalls & troubleshooting](#13-pitfalls--troubleshooting)
 14. [Cutover checklist](#14-cutover-checklist)
+
+---
+
+## TLS for DBAs — a gentle introduction
+
+*You already run the database and the listener. This section is the small amount of
+security theory behind the runbook — read it once and the rest of the guide reads like
+ordinary Oracle Net work.*
+
+### What problem TLS solves
+
+Today every SQL*Net session crosses the network in **cleartext**: login credentials,
+bind values, and whole result sets travel as readable bytes. Anyone who can capture
+traffic — a switch span port, a tap, a compromised host — can read them, and can also
+impersonate the database. TLS closes this with three guarantees:
+
+- **Confidentiality** — the traffic is encrypted; a capture yields only ciphertext.
+- **Server authentication** — the client cryptographically verifies it is talking to
+  the *real* database server, not an impostor, defeating a **man-in-the-middle** who
+  sits between client and server.
+- **Integrity** — any tampering with packets in flight is detected.
+
+It is the same technology, and the same trust model, as the HTTPS padlock in a browser
+— applied to Oracle Net instead of the web.
+
+### How a TLS handshake works, in plain words
+
+1. The client opens a TCPS connection to the listener.
+2. The **server presents its certificate** — a CA-signed document binding the server's
+   identity (its hostname) to a public key.
+3. The client **validates** that certificate: the signature chains up to a Certificate
+   Authority it trusts, the certificate is within its validity dates, and the hostname
+   the client dialled matches the name inside the cert (the CN or a SAN).
+4. Client and server agree **session keys** and switch to encrypting everything that
+   follows.
+
+The expensive public-key (**asymmetric**) cryptography happens **only during the
+handshake**. Once session keys are agreed the session itself uses fast **symmetric**
+encryption. So the cost is **per-connection**, paid once at connect time — not
+per-query — and connection pools amortise it away almost entirely.
+
+### How this maps to Oracle
+
+- **TCPS** is simply SQL*Net carried over TLS — the same protocol you know, wrapped in
+  an encrypted channel, on its own port (1527 here).
+- The **Oracle wallet** is Oracle's container for keys and certificates. The **server**
+  wallet holds the server certificate, its private key, and the CA chain; a **client**
+  needs only the trusted root/intermediate CA to validate the server.
+- The **listener** gains an extra TCPS endpoint alongside the existing TCP one.
+- We run **one-way TLS**: only the server proves its identity. Clients present no
+  certificate of their own (`SSL_CLIENT_AUTHENTICATION=FALSE`), so there are no client
+  keys to issue or manage.
+
+### Terminology (DBA-framed, one line each)
+
+| Term | What it means here |
+|------|--------------------|
+| **Certificate** | A CA-signed file binding an identity (the server's FQDN) to a public key. |
+| **Public / private key pair** | Two matched keys; the private key stays secret in the server wallet, the public key travels inside the certificate. |
+| **CA (Certificate Authority)** | The trusted issuer that signs certificates — here, the bank's internal enterprise CA. |
+| **Root vs intermediate CA** | The root is the top of trust (self-signed); intermediates are signed by the root and actually issue the server certs — both must be trusted to complete a chain. |
+| **Chain of trust** | Server cert → intermediate → root; a client trusts the server because it trusts the root at the top. |
+| **CSR (Certificate Signing Request)** | The request file you send the CA — carrying the server's identity and public key — to get a signed certificate back. |
+| **CN / SAN** | Common Name and Subject Alternative Name — the hostname(s) inside the certificate that a client matches against the name it connected to. |
+| **FQDN-matching** | The client checks that the fully-qualified hostname it dialled equals the cert's CN/SAN — the anti-impersonation check. |
+| **Cipher suite** | The negotiated bundle of algorithms (key exchange + bulk encryption + integrity), e.g. ECDHE + AES-GCM. |
+| **TLS version (1.2 / 1.3)** | The protocol generation; 1.2 is the safe default here, 1.3 is newer/faster once client drivers support it. |
+| **One-way vs mutual TLS (mTLS)** | One-way: only the server authenticates (our choice). Mutual: both sides present certs (out of scope). |
+| **Oracle wallet** | The keystore file holding certs/keys for TLS (`ewallet.p12`); kept strictly separate from the TDE keystore. |
+| **cwallet.sso (auto-login)** | An obfuscated wallet copy the listener/DB can open at startup without a password prompt. |
+| **orapki** | Oracle's command-line tool for creating wallets and importing certificates. |
 
 ---
 

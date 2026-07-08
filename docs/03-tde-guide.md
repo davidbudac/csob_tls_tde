@@ -19,6 +19,8 @@ is cross-referenced below.
 
 ## Table of contents
 
+*New to TDE? Start with [TDE for DBAs — a gentle introduction](#tde-for-dbas--a-gentle-introduction) below.*
+
 1. [Key architecture concepts](#1-key-architecture-concepts)
 2. [Keystore types](#2-keystore-types)
 3. [WALLET_ROOT / TDE_CONFIGURATION setup](#3-wallet_root--tde_configuration-setup)
@@ -33,6 +35,79 @@ is cross-referenced below.
 12. [Loss scenarios](#12-loss-scenarios)
 13. [Runbook — end-to-end order of operations](#13-runbook--end-to-end-order-of-operations)
 14. [Open validation items](#14-open-validation-items)
+
+---
+
+## TDE for DBAs — a gentle introduction
+
+*You already run the database; TDE adds one thing below the SQL layer — encryption of
+the files on disk — plus a keystore to look after. This section is the theory behind
+the runbook.*
+
+### What TDE protects — and what it does not
+
+TDE protects **data at rest in files**. Its threat model is **stolen or copied media**:
+a pulled disk or LUN, cloned datafiles, a lost backup tape, or an OS-level read of the
+datafiles by someone who is not a database user. On that media the data is ciphertext
+and useless without the key.
+
+TDE does **not** protect against **SQL-level access**. Any session that authenticates
+to the database sees fully clear data — TDE is invisible to it. The controls that
+address *that* threat are **privileges, auditing, and TLS for the wire** (this
+programme's other track). TDE and TLS are complementary, not substitutes.
+
+### Why "transparent"
+
+Encryption and decryption happen **in the database kernel, below the SQL layer**. No
+application, schema, or query change is required; SQL statements, execution plans, and
+indexes are unaffected, because blocks are decrypted into the buffer cache before SQL
+ever touches them. "Transparent" means transparent to applications and to SQL.
+
+### Where data is clear vs encrypted
+
+- **Clear** in the SGA/PGA (buffer cache, sorts) and **on the wire** — protecting the
+  wire is TLS's job, not TDE's.
+- **Encrypted** in the datafiles; and, for encrypted tablespaces, also in **redo,
+  undo, temp, and RMAN backups** of those blocks.
+
+Hardware AES acceleration (x86 AES-NI, POWER in-core crypto) keeps the per-block
+overhead low — though, as [§7](#7-performance-on-aix--power) stresses, you must
+*measure* it on AIX/POWER rather than assume it.
+
+### The key hierarchy in plain words
+
+TDE uses **two tiers**:
+
+1. A **master encryption key (MEK)**, held in the **keystore outside the database**.
+2. Per-tablespace **data keys**, held in the datafile headers, each **encrypted
+   (wrapped) by the MEK**.
+
+To read an encrypted block the database opens the keystore, retrieves the MEK, and
+unwraps that tablespace's data key. The design makes **MEK rotation cheap**: rotating
+re-encrypts only the small data keys, never the data itself.
+
+The keystore is the **crown jewel**. Lose it *and its backups* and the data is
+**cryptographically unrecoverable** — there is no back door ([§12](#12-loss-scenarios)).
+That is the very property that makes TDE work against stolen media: without the keystore
+the files are just noise. It is also why keystore backup and custody are the
+highest-stakes part of this programme.
+
+### Terminology (one line each)
+
+| Term | What it means here |
+|------|--------------------|
+| **AES** | The symmetric block cipher that encrypts the data; we standardise on **AES256**. |
+| **Symmetric encryption** | One key both encrypts and decrypts — fast, used for the bulk data (contrast the asymmetric key pairs behind TLS certificates). |
+| **MEK (master encryption key)** | The top-tier key that wraps the data keys; lives in the keystore, one active per container/PDB. |
+| **Data / tablespace key** | The per-tablespace key that actually encrypts the blocks; stored wrapped in the datafile header. |
+| **Keystore vs wallet** | The same kind of file; "keystore" is the TDE term, "wallet" the generic Oracle one — the TDE keystore is kept separate from the TLS wallet. |
+| **ewallet.p12 (password keystore)** | The master keystore file; opening it needs the keystore password — required for all key operations. |
+| **cwallet.sso (auto-login)** | A derived keystore the instance opens at startup without a password, so the DB (and standby) come up unattended. |
+| **WALLET_ROOT** | The 19c instance parameter pointing at the keystore directory tree; Oracle appends `/tde` itself. |
+| **Key rotation / re-key** | Replacing the active MEK; re-wraps the data keys only, so it is fast and low-I/O. |
+| **HSM (hardware security module)** | A tamper-resistant appliance that holds keys in hardware — stronger custody than a file keystore. |
+| **OKV (Oracle Key Vault)** | Oracle's central key-management appliance (the Phase-2 target here), optionally fronting an HSM. |
+| **Key custody / escrow** | Who holds the keystore and its password, plus their secured backup — separated from the DBA by policy. |
 
 ---
 
@@ -112,7 +187,7 @@ $WALLET_ROOT/                         = /oracle/admin/<SID>/wallet
 $WALLET_ROOT/tde/                     <- software keystore (non-CDB, or united CDB)
     ewallet.p12                       <- password keystore (master)
     cwallet.sso                       <- (non-local) auto-login keystore
-$WALLET_ROOT/tde_seps/                <- (optional) SEPS wallet, unrelated to TDE
+$WALLET_ROOT/tde_seps/                <- (optional) SEPS (Secure External Password Store) wallet, unrelated to TDE
 $WALLET_ROOT/<PDB_GUID>/tde/          <- per-PDB keystore ONLY in ISOLATED mode
 $WALLET_ROOT/okv/                     <- (Phase 2) OKV client
 ```

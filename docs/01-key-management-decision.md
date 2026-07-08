@@ -1,6 +1,6 @@
 # 01 — TDE Key-Management Decision
 
-**Purpose.** This document records the decision for how TDE **master encryption keys (MEKs)** are stored and managed across the fleet. It compares Oracle Key Vault (OKV) / external HSM against local per-database software keystores (auto-login wallets), gives the recommendation for a large regulated bank, and — importantly — fixes the **conventions we adopt now** (directory layout, `WALLET_ROOT` configuration, wallet operational policy, custody, and CDB vs non-CDB keystore mode) so that starting local does **not** block a later migration to OKV. Environment assumptions are as stated in [00-overview.md](00-overview.md): Oracle 19c EE, non-RAC, AIX 7.2/POWER, mixed CDB/non-CDB, Data Guard standbys, ASO licensed, OKV not yet licensed.
+**Purpose.** This document records the decision for how TDE **master encryption keys (MEKs)** are stored and managed across the fleet. It compares Oracle Key Vault (OKV) / external HSM (hardware security module) against local per-database software keystores (auto-login wallets), gives the recommendation for a large regulated bank, and — importantly — fixes the **conventions we adopt now** (directory layout, `WALLET_ROOT` configuration, wallet operational policy, custody, and CDB vs non-CDB keystore mode) so that starting local does **not** block a later migration to OKV. Environment assumptions are as stated in [00-overview.md](00-overview.md): Oracle 19c EE, non-RAC, AIX 7.2/POWER, mixed CDB/non-CDB, Data Guard standbys, ASO licensed, OKV not yet licensed.
 
 ## Table of contents
 1. [Background: what we are protecting](#1-background-what-we-are-protecting)
@@ -52,7 +52,7 @@ The database talks straight to an HSM via `HSM` keystore type / PKCS#11, no OKV 
 
 ## 4. Availability / SPOF analysis
 
-This is the objection most often raised against OKV ("if the vault is down, are all our databases down?"). The honest answer:
+*SPOF = single point of failure.* This is the objection most often raised against OKV ("if the vault is down, are all our databases down?"). The honest answer:
 
 - **Local auto-login wallet (A):** the MEK is local, so there is **no run-time external dependency**. The database opens the wallet from the local filesystem at startup and keeps the key in the SGA. The only availability concern is the wallet file itself — mitigated by backups and standby copies.
 - **OKV (B):** an endpoint fetches the MEK from OKV, but with **persistent master key cache / auto-open** enabled, the key is **cached locally** after first retrieval. **Databases keep running through a transient OKV outage** using the cached key — including startup if the persistent cache is populated. What an OKV outage blocks are **new key operations** (rekey/rotation, first-time key retrieval for a cold endpoint). It does **not** stop DML on already-open encrypted tablespaces.
@@ -106,7 +106,7 @@ ALTER SYSTEM SET TDE_CONFIGURATION = "KEYSTORE_CONFIGURATION=FILE" SCOPE=BOTH;
 /oracle/admin/$ORACLE_SID/
 ├── wallet/                     ← WALLET_ROOT
 │   ├── tde/                    ← TDE software keystore (auto-used; ewallet.p12 + cwallet.sso)
-│   ├── tde_seps/               ← (optional) SEPS wallet for keystore password auto-login to scripts
+│   ├── tde_seps/               ← (optional) SEPS (Secure External Password Store) wallet for keystore password auto-login to scripts
 │   └── ...                     ← (OKV endpoint files land under WALLET_ROOT/okv/ after migration)
 └── wallet_tls/                 ← TLS/TCPS wallet — SEPARATE, never shared with TDE
     ├── ewallet.p12

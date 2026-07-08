@@ -9,10 +9,10 @@ legacy OCI + APEX/ORDS application stack, internal enterprise CA, ASO licensed.
 
 | Doc | Contents |
 |-----|----------|
-| [docs/00-overview.md](docs/00-overview.md) | Program goals, drivers (DORA/PCI), two independent tracks, ANO interim option, licensing, wave model |
+| [docs/00-overview.md](docs/00-overview.md) | Program goals, "why encryption in plain terms" primer, drivers (DORA/PCI), two independent tracks, ANO interim option, licensing, wave model |
 | [docs/01-key-management-decision.md](docs/01-key-management-decision.md) | OKV/HSM vs local software keystores; decided conventions (`WALLET_ROOT`, layout, backup, custody) |
-| [docs/02-tls-guide.md](docs/02-tls-guide.md) | TLS runbook: wallets, CSR workflow, listener/sqlnet, JDBC/OCI/ORDS clients, DB links, DG redo transport, rotation, troubleshooting |
-| [docs/03-tde-guide.md](docs/03-tde-guide.md) | TDE: concepts, conversion decision matrix (online/offline/standby-first/rebuild), DG specifics, AIX/POWER performance, aftercare |
+| [docs/02-tls-guide.md](docs/02-tls-guide.md) | Gentle TLS intro for DBAs new to it, then the TLS runbook: wallets, CSR workflow, listener/sqlnet, JDBC/OCI/ORDS clients, DB links, DG redo transport, rotation, troubleshooting |
+| [docs/03-tde-guide.md](docs/03-tde-guide.md) | Gentle TDE intro for DBAs new to it, then TDE detail: concepts, conversion decision matrix (online/offline/standby-first/rebuild), DG specifics, AIX/POWER performance, aftercare |
 | [docs/04-rollout-plan.md](docs/04-rollout-plan.md) | Fleet rollout: waves, pilot measurements, app coordination, per-DB runbooks, rollback, acceptance criteria |
 | [docs/05-faq.md](docs/05-faq.md) | DBA FAQ (TLS & TDE): common questions answered against this fleet's decisions, 19c-verified gotchas flagged |
 

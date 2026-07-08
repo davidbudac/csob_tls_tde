@@ -52,12 +52,12 @@ The wallet is only in `listener.ora`. The spawned dedicated **server process
 re-reads `sqlnet.ora`**, so `WALLET_LOCATION` is *mandatory in sqlnet.ora too*
 (or in sqlnet.ora only, which the listener also reads). See [TLS §4.2](02-tls-guide.md#42-sqlnetora--server-side).
 
-**7. We already use SEPS / `WALLET_OVERRIDE=TRUE` — will adding TLS break it?** ✓ verified
+**7. We already use SEPS (Secure External Password Store) / `WALLET_OVERRIDE=TRUE` — will adding TLS break it?** ✓ verified
 Yes, silently. `sqlnet.ora` supports **one** `WALLET_LOCATION`; appending a second
 breaks one of them. **Merge** the CA trust into the existing wallet — don't append.
 Pre-flight the fleet with `grep -c WALLET_LOCATION sqlnet.ora`.
 
-**8. My orapki CSR has no SANs — is that a problem?**
+**8. My orapki CSR (Certificate Signing Request) has no SANs — is that a problem?**
 19c `orapki` generally omits SANs, and CN-only matching fails from some clients.
 Have the **CA template** stamp `CN=FQDN + DNS SANs`, or build the CSR with `openssl`.
 See [TLS §3.3](02-tls-guide.md#33-san-caveat-important).
@@ -109,7 +109,7 @@ then remove the endpoint and restart the listener. See [TLS §14](02-tls-guide.m
 ### Keys & architecture
 
 **1. What actually happens if I lose the keystore?**
-**Total, unrecoverable data loss** — no MEK means the wrapped tablespace keys can't
+**Total, unrecoverable data loss** — no MEK (master encryption key) means the wrapped tablespace keys can't
 be unwrapped, no back door. Wallet backup + separate custody is the highest-stakes
 part of the whole programme. See [TDE §12](03-tde-guide.md#12-loss-scenarios).
 

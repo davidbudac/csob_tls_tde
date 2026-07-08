@@ -12,6 +12,20 @@
 7. [Wave and timeline model](#7-wave-and-timeline-model)
 8. [Reading map](#8-reading-map)
 
+*New to encryption? Read [Why encryption, in plain terms](#why-encryption-in-plain-terms) first.*
+
+---
+
+## Why encryption, in plain terms
+
+*Two different attacks, two different controls — which is why this is a two-track programme.*
+
+**Encryption in transit (TLS)** protects data while it is **moving on the network**. Every SQL*Net session today crosses the wire in cleartext, so anyone able to capture traffic can read credentials and result sets — or impersonate the database. TLS encrypts that channel and lets the client verify it is talking to the genuine server. Detail: [02-tls-guide.md](02-tls-guide.md).
+
+**Encryption at rest (TDE)** protects data while it is **sitting in files** — datafiles, backups, and redo on disk. If a disk, LUN, or backup tape is stolen or copied, the contents are ciphertext and unreadable without the key. Detail: [03-tde-guide.md](03-tde-guide.md).
+
+They address **different, non-overlapping threats** — the network path versus the stored media — and are **operationally independent** (different keys, files, and runbooks). Neither substitutes for the other: TLS does nothing for a stolen disk, TDE does nothing for a network tap. Hence the two independent tracks in [§4](#4-delivery-strategy-two-independent-tracks).
+
 ---
 
 ## 1. Goals and drivers
@@ -25,8 +39,8 @@ The programme delivers two distinct security controls:
 
 | Driver | Relevance |
 |--------|-----------|
-| **DORA** (Digital Operational Resilience Act) | ICT risk management requires encryption of data at rest and in transit, plus demonstrable key management and operational resilience of those controls. |
-| **PCI-DSS-style requirements** | Cardholder / sensitive data must be encrypted in transit over open/internal networks and rendered unreadable at rest; documented key-management lifecycle (generation, rotation, custody, retirement). |
+| **DORA** (EU Digital Operational Resilience Act) | ICT risk management requires encryption of data at rest and in transit, plus demonstrable key management and operational resilience of those controls. |
+| **PCI DSS** (Payment Card Industry Data Security Standard) style requirements | Cardholder / sensitive data must be encrypted in transit over open/internal networks and rendered unreadable at rest; documented key-management lifecycle (generation, rotation, custody, retirement). |
 | **Internal bank security policy** | Mandates encryption of confidential data at rest and in transit, separation of duties for key custody, and auditable cryptographic operations. |
 | **Audit / regulator findings** | Unencrypted SQL*Net and unencrypted datafiles are recurring findings; this programme closes them fleet-wide with a consistent, evidenced standard. |
 
@@ -52,13 +66,13 @@ The following environment assumptions hold across the estate and are restated in
 | SQL*Net transport | Cleartext TCP (port 1526) only | TLS/TCPS with server-cert authentication; TCP closed after coexistence |
 | Server identity | None (no certificates) | Per-host server certificate from internal CA, monitored for expiry |
 | Data at rest | Unencrypted datafiles, backups, redo | TDE tablespace encryption on all application tablespaces; encrypted RMAN backups |
-| Master key storage | N/A | Standardised TDE keystore (local software keystore now → **OKV/HSM** target); `WALLET_ROOT`-based config |
+| Master key storage | N/A | Standardised TDE keystore (local software keystore now → **OKV**/**HSM** — hardware security module — target); `WALLET_ROOT`-based config |
 | Key lifecycle | N/A | Documented generation, rotation, backup, custody with separation of duties |
 | Data Guard | Unencrypted redo transport | TDE-protected redo; keystore kept in sync on standby |
 
 ## 4. Delivery strategy: two independent tracks
 
-**TDE and TLS are independent controls and MUST be run as separate, parallel workstreams.** They share almost nothing operationally: TLS touches the listener, certificates, and client connect strings; TDE touches keystores, master keys, and tablespaces. Coupling them into a single change window multiplies risk and blast radius. Each track has its own runbook, its own rollback, and its own acceptance criteria.
+**TDE and TLS are independent controls and MUST be run as separate, parallel workstreams.** They share almost nothing operationally: TLS touches the listener, certificates, and client connect strings; TDE touches keystores, master encryption keys (MEKs), and tablespaces. Coupling them into a single change window multiplies risk and blast radius. Each track has its own runbook, its own rollback, and its own acceptance criteria.
 
 ```
                  ┌──────────────────────────────────────────┐
@@ -80,7 +94,7 @@ TDE tablespace encryption should be planned as **forward-only**. Online decrypti
 
 ## 5. Interim option: native SQL*Net encryption (ANO)
 
-Rolling out TLS certificates and migrating hundreds of application connect strings takes time. **Native Network Encryption (formerly ASO's ANO)** is a pragmatic **interim** control for data-in-transit while the TLS track runs.
+Rolling out TLS certificates and migrating hundreds of application connect strings takes time. **Native Network Encryption (formerly ASO's ANO — Advanced Networking Option)** is a pragmatic **interim** control for data-in-transit while the TLS track runs.
 
 - **De-licensed in 2013:** Oracle native SQL*Net encryption and native data integrity are **free** — no ASO (or any) licence is required for them. (They historically lived under ASO; Oracle unbundled them.) TDE, in contrast, still requires ASO.
 - **Zero client-side change** for a quick win: setting the server side alone encrypts the session. With:

@@ -107,7 +107,7 @@ Ordered checklist. Non-disruptive up to step 6 (dual-port coexistence keeps TCP 
    ```sh
    orapki wallet create -wallet /oracle/admin/$ORACLE_SID/wallet_tls -pwd "<pw>" -auto_login
    ```
-2. **Generate a CSR, get it signed by the internal CA, import the chain:**
+2. **Generate a CSR (Certificate Signing Request), get it signed by the internal CA, import the chain:**
    ```sh
    orapki wallet add -wallet /oracle/admin/$ORACLE_SID/wallet_tls -pwd "<pw>" \
      -dn "CN=$(hostname -f)" -keysize 2048 -sign_alg sha256WithRSAEncryption
@@ -124,7 +124,8 @@ Ordered checklist. Non-disruptive up to step 6 (dual-port coexistence keeps TCP 
    ```ini
    # sqlnet.ora  (REQUIRED here, not just listener.ora — the DB server process needs the
    # wallet after listener handoff, else clients get ORA-28865; see 02-tls-guide.md §4.2.
-   # Check first for an existing WALLET_LOCATION / SEPS WALLET_OVERRIDE — merge, don't append.)
+   # Check first for an existing WALLET_LOCATION / SEPS (Secure External Password Store)
+   # WALLET_OVERRIDE — merge, don't append.)
    WALLET_LOCATION = (SOURCE=(METHOD=FILE)(METHOD_DATA=(DIRECTORY=/oracle/admin/<ORACLE_SID>/wallet_tls)))
    SSL_SERVER_DN_MATCH = TRUE
    SSL_VERSION = 1.2                    # enforce TLS 1.2+ (1.3 where client stack supports it)
@@ -158,7 +159,7 @@ Ordered checklist. Uses the conventions from [01](01-key-management-decision.md)
    -- >>> bounce the instance now <<<
    ALTER SYSTEM SET TDE_CONFIGURATION="KEYSTORE_CONFIGURATION=FILE" SCOPE=BOTH;
    ```
-2. **Create keystore, open it, set the first MEK, create auto-login** (CDB: `CONTAINER=ALL` in root):
+2. **Create keystore, open it, set the first MEK (master encryption key), create auto-login** (CDB: `CONTAINER=ALL` in root):
    ```sql
    ADMINISTER KEY MANAGEMENT CREATE KEYSTORE IDENTIFIED BY "<ks_pw>";
    ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY "<ks_pw>" CONTAINER=ALL;
