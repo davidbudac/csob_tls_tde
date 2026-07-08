@@ -1,6 +1,6 @@
 # 03 - Transparent Data Encryption (TDE) Guide
 
-**Scope:** Oracle 19c Enterprise Edition, non-RAC, AIX 7.2 (POWER), ksh. Mixed
+**Scope:** Oracle 19c Enterprise Edition (fleet RU **19.30**), non-RAC, AIX 7.2 (POWER), ksh. Mixed
 non-CDB and CDB/PDB fleet. Physical Data Guard standbys on (almost) every
 database. Advanced Security Option (ASO) licensed. **Phase 1** key management =
 **local software keystores** using the **WALLET_ROOT** layout, standardized so a
@@ -144,18 +144,79 @@ Two models exist for CDBs:
 
 - **Isolated mode:** a given PDB gets its **own keystore** under
   `$WALLET_ROOT/<PDB_GUID>/tde` and its **own `TDE_CONFIGURATION`**, managed with
-  the PDB's own keystore password independent of the root.
+  the PDB's own keystore password independent of the root. Each isolated PDB can
+  even use a **different keystore type** (software file, OKV, …) than its siblings.
 
-  > **RU caveat — verify at your RU.** Isolated-mode keystores are a 21c feature
-  > that was **backported to 19c** on later RUs (the per-PDB `TDE_CONFIGURATION`
-  > + `$WALLET_ROOT/<GUID>/tde` mechanics). The exact minimum RU is
-  > **not guaranteed the same across all 19.x** — do not assume it exists on
-  > older RUs. **If you have any doubt, use united mode**, which is always
-  > supported. Flagged in [§14](#14-open-validation-items).
+  > **RU support (19c).** Isolated mode began as a cloud-only feature and was made
+  > available **on-premises from 19.11**: on **19.11–19.13 it requires patch
+  > `32235513`**, and from **19.14 onward it is included** (no patch). It does not
+  > exist on RUs older than 19.11. Source: D. Overby Hansen, *Transparent Data
+  > Encryption and Multitenant* (dohdatabase.com, 2022-05-16); the
+  > `FORCE ISOLATE` / `UNITE` round-trip is **verified live on 19.27** (see
+  > [§14](#14-open-validation-items)). The fleet runs **19.30**, so isolated mode
+  > is included natively — **no patch needed**.
+  >
+  > **Isolated keystore has no auto-login until you make one.** After
+  > `FORCE ISOLATE`, the new per-PDB keystore is a **password wallet only**
+  > (`WALLET_TYPE=PASSWORD`); there is no `cwallet.sso` under
+  > `$WALLET_ROOT/<GUID>/tde`. On a DG fleet that means the isolated PDB will
+  > **not auto-open on restart** and its redo can't be applied until you create a
+  > **non-local auto-login for the isolated keystore too** and sync that extra
+  > `cwallet.sso` to the standby — another reason united mode is simpler here.
+  >
+  > **Tooling / ops caveats.** Isolated mode carries real operational cost: **each
+  > PDB keystore is a separate wallet to back up, sync to the standby, and hold in
+  > custody**, and some Oracle tooling — notably **AutoUpgrade and OCI-side
+  > tooling** — does **not** fully support isolated keystores. It strengthens key
+  > separation but multiplies the DG wallet-sync and backup surface.
 
 **Recommendation for this fleet: united keystore, per-PDB MEKs.** It is the
 simplest correct model, works on every 19c RU, and keeps the DG wallet-sync
-story to a single keystore file set.
+story to a **single** keystore file set. Reach for isolated mode only for a
+specific PDB that genuinely needs an independent keystore password or keystore
+type (e.g. a tenant that must hold its own key), and only after confirming the RU
+supports it.
+
+### 4.1 Verifying and switching modes
+
+Check the current mode per container:
+
+```sql
+SELECT con_id, wrl_parameter, keystore_mode FROM v$encryption_wallet ORDER BY con_id;
+-- KEYSTORE_MODE: NONE on CDB$ROOT, UNITED (or ISOLATED) on each PDB.
+```
+
+If a specific PDB must be moved **united → isolated** (run inside that PDB, RU
+permitting — see above):
+
+```sql
+ALTER SESSION SET CONTAINER = PDB1;
+ADMINISTER KEY MANAGEMENT FORCE ISOLATE KEYSTORE
+  IDENTIFIED BY "<isolated_pwd>"
+  FROM ROOT KEYSTORE FORCE KEYSTORE IDENTIFIED BY "<root_pwd>"
+  WITH BACKUP;
+```
+
+To fold it back **isolated → united**:
+
+```sql
+ALTER SESSION SET CONTAINER = PDB1;
+ADMINISTER KEY MANAGEMENT UNITE KEYSTORE
+  IDENTIFIED BY "<isolated_pwd>"
+  WITH ROOT KEYSTORE FORCE KEYSTORE IDENTIFIED BY "<root_pwd>"
+  WITH BACKUP;
+```
+
+After either switch, **re-create the auto-login and re-sync every affected wallet
+to the standby** ([§6](#6-data-guard-specifics)) — an isolated PDB adds a wallet
+under `$WALLET_ROOT/<PDB_GUID>/tde` that the standby also needs.
+
+> **Cleanup gotcha (verified 19.27).** `UNITE KEYSTORE` folds the PDB's key back
+> into the root keystore and restores `KEYSTORE_MODE=UNITED`, but it **leaves the
+> old isolated keystore directory `$WALLET_ROOT/<GUID>/tde/ewallet.p12` on disk**
+> — Oracle does not remove it. It is orphaned (no container references it); remove
+> it manually only after confirming the unite succeeded and the wallet is backed
+> up.
 
 ---
 
@@ -347,12 +408,13 @@ To ensure tablespaces created after go-live are encrypted automatically:
   encrypted even when the `CREATE TABLESPACE` statement omits an `ENCRYPTION`
   clause. Values: `DDL` (only if named in DDL — default is `CLOUD_ONLY`),
   `ALWAYS`, `CLOUD_ONLY`. **`ALWAYS` is the fleet standard.**
-- **`TABLESPACE_ENCRYPTION` — RU-dependent, verify.** A newer
-  `TABLESPACE_ENCRYPTION` init parameter (from 23ai, **reportedly backported to
-  19c around 19.16+**) offers finer control (`AUTO_ENABLE` etc.). **Do not rely
-  on it unless confirmed at your RU.** On any RU where it isn't present, use
-  `ENCRYPT_NEW_TABLESPACES=ALWAYS`, which is always available. Flagged in
-  [§14](#14-open-validation-items).
+- **`TABLESPACE_ENCRYPTION` — present on 19.30.** The newer
+  `TABLESPACE_ENCRYPTION` init parameter (from 23ai, backported to 19c around
+  19.16+) offers finer control (`AUTO_ENABLE` etc.) and **is present on the
+  fleet's 19.30** (confirmed on the 19.27 test box, default `MANUAL_ENABLE`). We
+  still **standardize on `ENCRYPT_NEW_TABLESPACES=ALWAYS`** — it's universal and
+  unambiguous — and treat `TABLESPACE_ENCRYPTION` as optional finer-grained
+  control.
 
 ---
 
@@ -501,21 +563,34 @@ end-to-end on a 19.27 CDB with one PDB. Confirmed:
 - `V$ENCRYPTION_KEYS` (`CREATOR_PDBNAME`, `ACTIVATION_TIME`),
   `V$ENCRYPTED_TABLESPACES` (`ENCRYPTIONALG`, `STATUS`) and the
   `CDB_TABLESPACES` joins in `04_verify_tde.sql` are all valid on 19.27.
+- **Isolated mode round-trip works on 19.27 (no patch).**
+  `ADMINISTER KEY MANAGEMENT FORCE ISOLATE KEYSTORE ... FROM ROOT KEYSTORE FORCE
+  KEYSTORE ...` on PDB1 flipped `KEYSTORE_MODE` to `ISOLATED` and created
+  `$WALLET_ROOT/<PDB_GUID>/tde/ewallet.p12`; `UNITE KEYSTORE ... WITH ROOT
+  KEYSTORE FORCE KEYSTORE ...` returned it to `UNITED`. Two observations baked
+  into [§4](#4-cdb-united-vs-isolated-keystores): the isolated keystore is created
+  as **`WALLET_TYPE=PASSWORD` with no auto-login**, and `UNITE` **leaves the
+  orphaned `<GUID>/tde` keystore dir on disk**.
 
 ### Still open — validate at the fleet's actual RU / on AIX
 
-1. **Isolated-mode PDB keystores in 19c** — confirm the minimum RU at which
-   per-PDB `TDE_CONFIGURATION` + `$WALLET_ROOT/<GUID>/tde` isolated keystores are
-   supported. **Default to united mode** unless confirmed. ([§4](#4-cdb-united-vs-isolated-keystores))
-2. **AIX/POWER hardware crypto acceleration for TDE** — confirm by benchmark
-   whether your RU engages POWER in-core AES for TDE; don't assume. Measure
-   overhead in a pilot. ([§7](#7-performance-on-aix--power))
-3. **UNDO encryption path** — confirm whether online UNDO encryption is offered at
-   your RU; **prefer the recreate-and-swap** approach regardless. ([§10](#10-encrypting-system--sysaux--undo--temp))
-4. **Standby-first conversion exact sequencing** — follow the current MOS note
-   (2851392.1-style) for your RU; per-datafile offline steps and the
+> **Resolved by the fleet's 19.30 RU:** isolated-mode PDB keystores (19.11+ /
+> included from 19.14) ship **natively on 19.30 — no patch** — and the
+> `FORCE ISOLATE`/`UNITE` round-trip is verified (see the Verified-live list
+> above); `TABLESPACE_ENCRYPTION` is present on 19.30. Isolated mode is therefore
+> a supported *option*, though we still **default to united** for operational
+> simplicity; mind the AutoUpgrade/OCI tooling gaps and the missing isolated
+> auto-login ([§4](#4-cdb-united-vs-isolated-keystores)).
+
+1. **AIX/POWER hardware crypto acceleration for TDE** — confirm by benchmark
+   whether 19.30 engages POWER in-core AES for TDE **on AIX**; don't assume.
+   Measure overhead in a pilot. ([§7](#7-performance-on-aix--power))
+2. **UNDO encryption path** — confirm whether online UNDO encryption is offered on
+   19.30; **prefer the recreate-and-swap** approach regardless. ([§10](#10-encrypting-system--sysaux--undo--temp))
+3. **Standby-first conversion exact sequencing** — follow the current MOS note
+   (2851392.1-style) for 19.30; per-datafile offline steps and the
    redo/key ordering details are the authoritative source. ([§5.3](#53-standby-first-conversion-method-3--recommended-for-this-fleet))
-5. **Non-local auto-login open on a copied-to standby host** — auto-open after a
+4. **Non-local auto-login open on a copied-to standby host** — auto-open after a
    bounce is verified (above); confirm on a real DG pair that the copied
    `cwallet.sso` also opens on the **standby host without** a bounce.
    ([§6](#6-data-guard-specifics))

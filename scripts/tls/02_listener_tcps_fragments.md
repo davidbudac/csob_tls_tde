@@ -1,12 +1,12 @@
 # 02 — TCPS configuration fragments (server + client)
 
 Annotated `listener.ora`, `sqlnet.ora`, `tnsnames.ora` fragments and JDBC URL examples
-for the dual-port (TCP 1521 + TCPS 2484) coexistence rollout. Replace the placeholder
+for the dual-port (TCP 1526 + TCPS 1527) coexistence rollout. Replace the placeholder
 values (`db01.prod.csob.cz`, `APPSVC.prod.csob.cz`, DN, wallet paths) with real values.
 
 Conventions used below:
 - Host: `db01.prod.csob.cz` (FQDN — must equal cert CN/SAN)
-- TCPS port: `2484`, TCP port: `1521`
+- TCPS port: `1527`, TCP port: `1526`
 - Wallet: `/oracle/admin/db01/wallet_tls` (TLS wallet, **separate from TDE keystore**)
 - Server DN: `CN=db01.prod.csob.cz,OU=DBA,O=CSOB,L=Praha,C=CZ`
 
@@ -16,14 +16,14 @@ Conventions used below:
 
 ```
 #------------------------------------------------------------------------------
-# listener.ora  --  dual endpoint: keep TCP 1521, add TCPS 2484
+# listener.ora  --  dual endpoint: keep TCP 1526, add TCPS 1527
 #------------------------------------------------------------------------------
 LISTENER =
   (DESCRIPTION_LIST =
     (DESCRIPTION =
-      (ADDRESS = (PROTOCOL = TCP)(HOST = db01.prod.csob.cz)(PORT = 1521)))
+      (ADDRESS = (PROTOCOL = TCP)(HOST = db01.prod.csob.cz)(PORT = 1526)))
     (DESCRIPTION =
-      (ADDRESS = (PROTOCOL = TCPS)(HOST = db01.prod.csob.cz)(PORT = 2484)))
+      (ADDRESS = (PROTOCOL = TCPS)(HOST = db01.prod.csob.cz)(PORT = 1527)))
   )
 
 # Wallet the LISTENER presents for TCPS handshakes. May live here or in
@@ -93,7 +93,7 @@ SSL_SERVER_DN_MATCH = TRUE
 # Native encryption (ANO) interaction -- see guide section 5.
 # TLS and native encryption do NOT stack usefully; over TCPS, forcing native
 # = double encryption. During coexistence, if you rely on native to protect
-# the surviving 1521 port, REQUIRED is acceptable but wasteful on TCPS.
+# the surviving 1526 port, REQUIRED is acceptable but wasteful on TCPS.
 # Target (TCPS-only) state: ACCEPTED or REJECTED.
 #------------------------------------------------------------------------------
 SQLNET.ENCRYPTION_SERVER = ACCEPTED
@@ -109,8 +109,8 @@ Then advertise the TCPS endpoint for dynamic registration (SQL, not a file):
 ```sql
 ALTER SYSTEM SET LOCAL_LISTENER=
  '(DESCRIPTION_LIST=
-    (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=db01.prod.csob.cz)(PORT=1521)))
-    (DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=db01.prod.csob.cz)(PORT=2484))))'
+    (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=db01.prod.csob.cz)(PORT=1526)))
+    (DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=db01.prod.csob.cz)(PORT=1527))))'
  SCOPE=BOTH;
 ALTER SYSTEM REGISTER;
 ```
@@ -125,7 +125,7 @@ ALTER SYSTEM REGISTER;
 #------------------------------------------------------------------------------
 DB02_TLS =
   (DESCRIPTION =
-    (ADDRESS = (PROTOCOL = TCPS)(HOST = db02.prod.csob.cz)(PORT = 2484))
+    (ADDRESS = (PROTOCOL = TCPS)(HOST = db02.prod.csob.cz)(PORT = 1527))
     (CONNECT_DATA = (SERVICE_NAME = BSVC.prod.csob.cz))
     (SECURITY = (SSL_SERVER_DN_MATCH = TRUE)
                 (SSL_SERVER_CERT_DN = "CN=db02.prod.csob.cz,OU=DBA,O=CSOB,L=Praha,C=CZ")))
@@ -133,7 +133,7 @@ DB02_TLS =
 # Data Guard standby transport alias (broker DGConnectIdentifier / LAD_2).
 STDBY_TLS =
   (DESCRIPTION =
-    (ADDRESS = (PROTOCOL = TCPS)(HOST = stdby01.dr.csob.cz)(PORT = 2484))
+    (ADDRESS = (PROTOCOL = TCPS)(HOST = stdby01.dr.csob.cz)(PORT = 1527))
     (CONNECT_DATA = (SERVICE_NAME = stdby.dr.csob.cz))
     (SECURITY = (SSL_SERVER_DN_MATCH = TRUE)
                 (SSL_SERVER_CERT_DN = "CN=stdby01.dr.csob.cz,OU=DBA,O=CSOB,L=Praha,C=CZ")))
@@ -170,7 +170,7 @@ orapki wallet add -wallet /oracle/client/wallet_tls -trusted_cert -cert csob-iss
 ```
 APPSVC_TLS =
   (DESCRIPTION =
-    (ADDRESS = (PROTOCOL = TCPS)(HOST = db01.prod.csob.cz)(PORT = 2484))
+    (ADDRESS = (PROTOCOL = TCPS)(HOST = db01.prod.csob.cz)(PORT = 1527))
     (CONNECT_DATA = (SERVICE_NAME = APPSVC.prod.csob.cz))
     (SECURITY = (SSL_SERVER_DN_MATCH = TRUE)
                 (SSL_SERVER_CERT_DN = "CN=db01.prod.csob.cz,OU=DBA,O=CSOB,L=Praha,C=CZ")))
@@ -189,7 +189,7 @@ sqlplus app_user@APPSVC_TLS
 ### Easy Connect Plus (preferred, JKS truststore holds the CA)
 
 ```
-jdbc:oracle:thin:@tcps://db01.prod.csob.cz:2484/APPSVC.prod.csob.cz?ssl_server_dn_match=true
+jdbc:oracle:thin:@tcps://db01.prod.csob.cz:1527/APPSVC.prod.csob.cz?ssl_server_dn_match=true
 ```
 
 JVM / datasource properties (system truststore approach — no Oracle wallet, no
@@ -205,7 +205,7 @@ JVM / datasource properties (system truststore approach — no Oracle wallet, no
 
 ```
 jdbc:oracle:thin:@(DESCRIPTION=
-  (ADDRESS=(PROTOCOL=TCPS)(HOST=db01.prod.csob.cz)(PORT=2484))
+  (ADDRESS=(PROTOCOL=TCPS)(HOST=db01.prod.csob.cz)(PORT=1527))
   (CONNECT_DATA=(SERVICE_NAME=APPSVC.prod.csob.cz))
   (SECURITY=(SSL_SERVER_DN_MATCH=TRUE)
             (SSL_SERVER_CERT_DN="CN=db01.prod.csob.cz,OU=DBA,O=CSOB,L=Praha,C=CZ")))
@@ -219,7 +219,7 @@ jdbc:oracle:thin:@(DESCRIPTION=
 
 ```
 db.connectionType=customurl
-db.customURL=jdbc:oracle:thin:@tcps://db01.prod.csob.cz:2484/APEXSVC.prod.csob.cz?ssl_server_dn_match=true
+db.customURL=jdbc:oracle:thin:@tcps://db01.prod.csob.cz:1527/APEXSVC.prod.csob.cz?ssl_server_dn_match=true
 ```
 
 ORDS JVM must trust the CA (add to the ORDS/Tomcat/WebLogic JVM options):

@@ -49,7 +49,7 @@ The following environment assumptions hold across the estate and are restated in
 
 | Dimension | Current state | Target state |
 |-----------|---------------|--------------|
-| SQL*Net transport | Cleartext TCP (port 1521) only | TLS/TCPS with server-cert authentication; TCP closed after coexistence |
+| SQL*Net transport | Cleartext TCP (port 1526) only | TLS/TCPS with server-cert authentication; TCP closed after coexistence |
 | Server identity | None (no certificates) | Per-host server certificate from internal CA, monitored for expiry |
 | Data at rest | Unencrypted datafiles, backups, redo | TDE tablespace encryption on all application tablespaces; encrypted RMAN backups |
 | Master key storage | N/A | Standardised TDE keystore (local software keystore now → **OKV/HSM** target); `WALLET_ROOT`-based config |
@@ -72,7 +72,7 @@ The following environment assumptions hold across the estate and are restated in
 
 ### TLS coexistence (dual-port) is mandatory
 
-Within the TLS track, we run a **dual-port coexistence period**: the listener serves **both TCP (1521) and TCPS (2484)** simultaneously. This lets each application team migrate its connect strings, truststores, and pools **at its own pace** without a hard cutover. Only when a database's monitoring shows **zero remaining cleartext TCP sessions** (verified via listener log / `V$SESSION` network context — see [04-rollout-plan.md](04-rollout-plan.md)) do we close the TCP endpoint. This decouples DBA-side enablement from application-side migration, which is the single biggest schedule risk.
+Within the TLS track, we run a **dual-port coexistence period**: the listener serves **both TCP (1526) and TCPS (1527)** simultaneously. This lets each application team migrate its connect strings, truststores, and pools **at its own pace** without a hard cutover. Only when a database's monitoring shows **zero remaining cleartext TCP sessions** (verified via listener log / `V$SESSION` network context — see [04-rollout-plan.md](04-rollout-plan.md)) do we close the TCP endpoint. This decouples DBA-side enablement from application-side migration, which is the single biggest schedule risk.
 
 ### TDE encryption is effectively forward-only
 
@@ -143,6 +143,7 @@ DEV wave ──▶ TEST wave ──▶ PREPROD wave ──▶ PROD wave
 | [**02-tls-guide.md**](02-tls-guide.md) | TLS runbook: wallet & CSR workflow, listener/sqlnet config, JDBC/OCI/ORDS clients, DB links, DG redo transport over TCPS, rotation, troubleshooting |
 | [**03-tde-guide.md**](03-tde-guide.md) | TDE guide: keystore concepts, conversion-method decision matrix (online / offline / standby-first / rebuild), DG specifics, AIX/POWER performance, aftercare |
 | [**04-rollout-plan.md**](04-rollout-plan.md) | Fleet rollout: wave model, pilot criteria & measurements, app-team coordination, per-DB TLS & TDE runbooks, rollback, monitoring/verification, acceptance criteria |
+| [**05-faq.md**](05-faq.md) | DBA FAQ for both tracks: the questions DBAs actually ask, answered against this fleet's decisions, with the 19c-verified gotchas flagged |
 
 **Scripts** (referenced by the runbooks):
 

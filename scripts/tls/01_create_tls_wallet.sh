@@ -209,7 +209,7 @@ do_import() {
   echo " 'Requested Certificate', the intermediate was missing - fix"
   echo " the import order and retry."
   echo " Next: set WALLET_LOCATION in listener.ora/sqlnet.ora, add the"
-  echo " TCPS 2484 endpoint, then full listener stop/start."
+  echo " TCPS 1527 endpoint, then full listener stop/start."
   echo "=============================================================="
 }
 

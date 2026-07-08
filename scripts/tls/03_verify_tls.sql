@@ -8,8 +8,8 @@
 --           (Oracle 19c EE. Works for non-CDB and CDB/PDB.)
 --
 -- Assumptions:
---   * You connected over the TCPS endpoint (port 2484). If you connected over
---     TCP 1521, NETWORK_PROTOCOL will show 'tcp' and this proves the negative.
+--   * You connected over the TCPS endpoint (port 1527). If you connected over
+--     TCP 1526, NETWORK_PROTOCOL will show 'tcp' and this proves the negative.
 --   * No SYSDBA required; any session with SELECT on the V$ views below works.
 --     (V$SESSION_CONNECT_INFO / V$SESSION_CONNECT_INFO need SELECT_CATALOG_ROLE
 --      or explicit grants for non-privileged users.)
@@ -49,7 +49,7 @@ SELECT 'Server host',         SYS_CONTEXT('USERENV','SERVER_HOST')       FROM du
 PROMPT
 PROMPT --- Interpretation 
 PROMPT  Network protocol = tcps  ->  session IS on the TLS endpoint.
-PROMPT  Network protocol = tcp   ->  session is CLEARTEXT (port 1521).
+PROMPT  Network protocol = tcp   ->  session is CLEARTEXT (port 1526).
 PROMPT ===========================================================
 PROMPT
 

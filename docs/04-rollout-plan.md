@@ -72,13 +72,13 @@ TLS is only "done" when applications actually connect over TCPS and the cleartex
 ### 3.2 Connect-string changes
 
 ```properties
-# JDBC thin — easy connect plus (19c), TCPS on 2484:
-jdbc:oracle:thin:@tcps://db-host.bank.internal:2484/PDBSERVICE?ssl_server_dn_match=true
+# JDBC thin — easy connect plus (19c), TCPS on 1527:
+jdbc:oracle:thin:@tcps://db-host.bank.internal:1527/PDBSERVICE?ssl_server_dn_match=true
 
 # TNS (tnsnames.ora) equivalent:
 MYDB_TCPS =
  (DESCRIPTION=
-   (ADDRESS=(PROTOCOL=TCPS)(HOST=db-host.bank.internal)(PORT=2484))
+   (ADDRESS=(PROTOCOL=TCPS)(HOST=db-host.bank.internal)(PORT=1527))
    (CONNECT_DATA=(SERVICE_NAME=PDBSERVICE))
    (SECURITY=(SSL_SERVER_CERT_DN="CN=db-host.bank.internal")))
 ```
@@ -92,7 +92,7 @@ keytool -importcert -trustcacerts -alias bank-internal-root \
 
 ### 3.3 Communication checklist / template (per DB)
 
-- [ ] Notify app owners: DB name, TCPS host/port (2484), service name, expected DN, coexistence window dates, TCP close date.
+- [ ] Notify app owners: DB name, TCPS host/port (1527), service name, expected DN, coexistence window dates, TCP close date.
 - [ ] Provide the internal CA root certificate + import instructions per app type.
 - [ ] App teams import truststore, add TCPS connect string in **non-prod first**, validate.
 - [ ] App teams confirm production cutover to TCPS.
@@ -135,18 +135,18 @@ Ordered checklist. Non-disruptive up to step 6 (dual-port coexistence keeps TCP 
    # listener.ora — BOTH endpoints listed = dual-port coexistence
    LISTENER =
     (DESCRIPTION_LIST=
-      (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=db-host.bank.internal)(PORT=1521)))
-      (DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=db-host.bank.internal)(PORT=2484))))
+      (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=db-host.bank.internal)(PORT=1526)))
+      (DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=db-host.bank.internal)(PORT=1527))))
    WALLET_LOCATION =
       (SOURCE=(METHOD=FILE)(METHOD_DATA=(DIRECTORY=/oracle/admin/<ORACLE_SID>/wallet_tls)))
    SSL_CLIENT_AUTHENTICATION = FALSE    # server-auth TLS only; no client certs
    ```
    ```sh
    lsnrctl stop; lsnrctl start   # adding a NEW listening ADDRESS requires stop/start (reload is not enough)
-   lsnrctl status                # expect TCP:1521 AND TCPS:2484 handlers
+   lsnrctl status                # expect TCP:1526 AND TCPS:1527 handlers
    ```
 5. **Coexistence & client migration** — app teams migrate per §3; both ports serve traffic. Monitor for remaining cleartext sessions (§7).
-6. **Close TCP** — only after zero cleartext sessions for the agreed soak period: remove the TCP `ADDRESS` from `listener.ora`, `lsnrctl reload`, and confirm only TCPS:2484 remains. Keep 1521 removable/re-addable for fast rollback (§6).
+6. **Close TCP** — only after zero cleartext sessions for the agreed soak period: remove the TCP `ADDRESS` from `listener.ora`, `lsnrctl reload`, and confirm only TCPS:1527 remains. Keep 1526 removable/re-addable for fast rollback (§6).
 
 ## 5. Runbook B — TDE enablement (per DB)
 
@@ -248,10 +248,10 @@ Register certificate expiry in the enterprise monitoring/OEM so renewal is drive
 A database is declared **done** only when all of the following hold:
 
 **TLS track**
-- [ ] TCPS:2484 endpoint live; server cert issued by internal CA, chain valid, `orapki` display clean.
+- [ ] TCPS:1527 endpoint live; server cert issued by internal CA, chain valid, `orapki` display clean.
 - [ ] Certificate expiry monitored in OEM/alerting.
 - [ ] All application connections migrated to TCPS; **zero cleartext TCP sessions** over the agreed soak period.
-- [ ] TCP:1521 endpoint closed (and documented as fast-re-addable for rollback).
+- [ ] TCP:1526 endpoint closed (and documented as fast-re-addable for rollback).
 - [ ] `SSL_VERSION`/cipher policy enforced; `SSL_SERVER_DN_MATCH=TRUE` on clients.
 
 **TDE track**

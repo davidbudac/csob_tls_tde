@@ -16,7 +16,7 @@
 #
 # Required / optional variables (export or edit defaults):
 #   TLS_HOST      - server FQDN (should equal cert CN/SAN)   [required]
-#   TLS_PORT      - TCPS port (default 2484)
+#   TLS_PORT      - TCPS port (default 1527)
 #   LISTENER_NAME - listener to query with lsnrctl (default LISTENER)
 #   TNS_ALIAS     - optional TCPS tnsnames alias for the sqlplus test
 #   DB_USER       - optional user for the sqlplus test (will prompt for pwd)
@@ -30,7 +30,7 @@
 set -e
 
 : ${TLS_HOST:?"TLS_HOST (server FQDN) must be set"}
-: ${TLS_PORT:=2484}
+: ${TLS_PORT:=1527}
 : ${LISTENER_NAME:=LISTENER}
 
 # Resolve the directory of this script WITHOUT readlink -f (not on AIX).

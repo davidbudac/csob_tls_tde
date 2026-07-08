@@ -1,9 +1,9 @@
 # 02 — TLS / SQL*Net Network Encryption Guide (Oracle 19c EE)
 
 **Purpose.** This runbook describes how to introduce TLS (TCPS) network encryption for
-Oracle 19c Enterprise Edition on AIX 7.2, non-RAC hosts, using a dual-port coexistence
-strategy: keep the cleartext `TCP` endpoint on port **1521**, add a `TCPS` endpoint on
-port **2484**, migrate every client/link/redo-transport channel, then retire 1521.
+Oracle 19c Enterprise Edition (fleet RU **19.30**) on AIX 7.2, non-RAC hosts, using a dual-port coexistence
+strategy: keep the cleartext `TCP` endpoint on port **1526**, add a `TCPS` endpoint on
+port **1527**, migrate every client/link/redo-transport channel, then retire 1526.
 It covers server-side wallet and listener configuration, client configuration (JDBC
 thin, legacy OCI, APEX/ORDS), DB links, Data Guard redo transport, certificate
 rotation, and a troubleshooting reference. The TLS wallet is **strictly separate** from
@@ -41,19 +41,19 @@ the TDE keystore (see the TDE track) and lives in its own directory
 | Item | Decision for CSOB |
 |------|-------------------|
 | TLS mode | One-way (server auth only). `SSL_CLIENT_AUTHENTICATION=FALSE`. |
-| Ports | `TCP` 1521 (existing, keep during coexistence), `TCPS` 2484 (new). |
+| Ports | `TCP` **1526** (existing, keep during coexistence), `TCPS` **1527** (new). *Fleet convention — not the Oracle defaults (1521 / 2484); every host listens on 1526 today and the TCPS endpoint we add is 1527.* |
 | Wallet type | Auto-login (`cwallet.sso`) so the listener/DB starts unattended. |
 | Wallet location | `/oracle/admin/$ORACLE_SID/wallet_tls` — separate from TDE keystore. |
-| TLS version | Pin **TLS 1.2** (`SSL_VERSION=1.2`) unless the RU level is confirmed to support 1.3 (see §4). |
+| TLS version | Default **TLS 1.2** (`SSL_VERSION=1.2`). The fleet's **19.30** DB stack supports TLS 1.3 (past the ~19.23 bar); enable 1.3 only after client-driver validation (see §4). |
 | Cipher suites | ECDHE + AES-GCM only (see §4). |
 | Cert key size | 2048-bit minimum; prefer **3072-bit** RSA for new certs (bank crypto policy). |
 | Cert subject | `CN` = server **FQDN**; request SANs for every name clients use. |
 | CA | Internal enterprise CA, CSR workflow. Import **root + intermediate** as trusted certs, then the user (server) cert. |
 
 **Why dual-port coexistence?** A single listener can serve both `TCP` and `TCPS`
-endpoints simultaneously. Existing 1521 clients keep working while you migrate clients
-to 2484 one application at a time. Only when monitoring confirms zero 1521 traffic from
-production apps do you remove the 1521 endpoint. This avoids a big-bang cutover.
+endpoints simultaneously. Existing 1526 clients keep working while you migrate clients
+to 1527 one application at a time. Only when monitoring confirms zero 1526 traffic from
+production apps do you remove the 1526 endpoint. This avoids a big-bang cutover.
 
 ---
 
@@ -208,9 +208,9 @@ Key points:
 LISTENER =
   (DESCRIPTION_LIST =
     (DESCRIPTION =
-      (ADDRESS = (PROTOCOL = TCP)(HOST = db01.prod.csob.cz)(PORT = 1521)))
+      (ADDRESS = (PROTOCOL = TCP)(HOST = db01.prod.csob.cz)(PORT = 1526)))
     (DESCRIPTION =
-      (ADDRESS = (PROTOCOL = TCPS)(HOST = db01.prod.csob.cz)(PORT = 2484)))
+      (ADDRESS = (PROTOCOL = TCPS)(HOST = db01.prod.csob.cz)(PORT = 1527)))
   )
 
 # Wallet the listener presents for TCPS. Can live here or in sqlnet.ora.
@@ -224,7 +224,7 @@ SSL_CLIENT_AUTHENTICATION = FALSE
 - **HOST** should be the **FQDN** that matches the cert CN/SAN (helps DN match and avoids
   the endpoint binding to a wrong interface).
 - **Restart vs reload:** `lsnrctl reload` re-reads most parameters, **but adding a new
-  listening ADDRESS/endpoint (the TCPS 2484 line) requires a full `lsnrctl stop` /
+  listening ADDRESS/endpoint (the TCPS 1527 line) requires a full `lsnrctl stop` /
   `lsnrctl start`.** Wallet/SSL parameter changes that don't add endpoints can be picked
   up with `reload`. Certificate-content changes (renewal into the same wallet) are picked
   up by `lsnrctl reload` — the listener re-reads the wallet — so rotation is
@@ -242,12 +242,15 @@ SSL_VERSION = 1.2
 SSL_CIPHER_SUITES = (TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256)
 ```
 
-- **`SSL_VERSION = 1.2`** — pin TLS 1.2. Native TLS 1.3 support in the Oracle DB stack
-  arrived only in later 19c RUs (roughly **19.23+**) and in 23ai; on lower RUs setting
-  `1.3` can fail the handshake. **Verify your RU** (`SELECT version_full FROM
-  v$instance;` on 19.18+, or check the RU with `opatch lspatches`). Unless every host is
-  confirmed at an RU that supports TLS 1.3 *and* your client drivers negotiate it, pin
-  `1.2`. You may specify `SSL_VERSION = 1.2 or 1.3` only after that verification.
+- **`SSL_VERSION = 1.2`** — default to TLS 1.2. Native TLS 1.3 support in the Oracle DB
+  stack arrived in later 19c RUs (roughly **19.23+**) and in 23ai. **The fleet is on
+  19.30, past that bar — the server side supports TLS 1.3.** The remaining gate is
+  **client-driver support**: many JDBC-thin / OCI stacks in use still negotiate 1.2, and
+  a client that can't do 1.3 will fail the handshake if the server is pinned to `1.3`
+  only. So keep `SSL_VERSION = 1.2` as the safe default, and move to
+  `SSL_VERSION = 1.2 or 1.3` (or `1.3`) per service **once you've validated the client
+  drivers in the pilot**. (Confirm a host's RU with `SELECT version_full FROM v$instance;`
+  or `opatch lspatches`.)
 - **`SSL_CIPHER_SUITES`** — restrict to ECDHE key exchange with AES-GCM AEAD suites for
   forward secrecy. Omit CBC and RSA-key-exchange suites. If any legacy OCI client can't
   negotiate ECDHE, widen temporarily but plan to remove weak suites. (Cipher-suite *names*
@@ -286,19 +289,19 @@ TLS are **two independent encryption mechanisms**. They do **not** "stack" usefu
 
 19c behaviour and recommendation for the coexistence period:
 
-| `SQLNET.ENCRYPTION_SERVER` | Effect on TCP 1521 | Effect on TCPS 2484 |
+| `SQLNET.ENCRYPTION_SERVER` | Effect on TCP 1526 | Effect on TCPS 1527 |
 |----------------------------|--------------------|---------------------|
 | `REJECTED` | No native encryption; cleartext | TLS only (clean) |
 | `ACCEPTED` (default) | Native only if client requests it | TLS only; native not forced |
 | `REQUESTED` | Native if client supports | TLS; native may also negotiate → double encryption |
-| `REQUIRED` | Native forced (good for 1521) | **Double encryption** on TCPS |
+| `REQUIRED` | Native forced (good for 1526) | **Double encryption** on TCPS |
 
 **Recommendation:**
 
-- If you rely on **native encryption to protect the surviving 1521 port** during
+- If you rely on **native encryption to protect the surviving 1526 port** during
   coexistence, set `SQLNET.ENCRYPTION_SERVER = REQUIRED` — but be aware TCPS sessions
   will then double-encrypt. Acceptable but wasteful.
-- The cleaner target state (after 1521 is closed) is `SQLNET.ENCRYPTION_SERVER =
+- The cleaner target state (after 1526 is closed) is `SQLNET.ENCRYPTION_SERVER =
   ACCEPTED` or `REJECTED` and rely solely on TLS. Set
   `SQLNET.ENCRYPTION_CLIENT`/`SERVER` to `ACCEPTED`/`REJECTED` on the TCPS-only end state
   so TLS is the single mechanism.
@@ -315,7 +318,7 @@ which port the client uses.
 ### 6.1 LOCAL_LISTENER must advertise the TCPS endpoint
 
 PMON dynamically registers the instance with the listener. By default it registers via
-the TCP endpoint on the default host:1521. For the instance to be reachable (and for
+the TCP endpoint on the default host:1526. For the instance to be reachable (and for
 `lsnrctl status` to show services on the TCPS endpoint), point `LOCAL_LISTENER` at an
 address list including the TCPS address, or use static registration.
 
@@ -324,8 +327,8 @@ address list including the TCPS address, or use static registration.
 ```sql
 ALTER SYSTEM SET LOCAL_LISTENER=
  '(DESCRIPTION_LIST=
-    (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=db01.prod.csob.cz)(PORT=1521)))
-    (DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=db01.prod.csob.cz)(PORT=2484))))'
+    (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=db01.prod.csob.cz)(PORT=1526)))
+    (DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=db01.prod.csob.cz)(PORT=1527))))'
  SCOPE=BOTH;
 ```
 
@@ -338,13 +341,13 @@ reachable while `MOUNTED` (PMON in a mounted standby may not dynamically registe
 Include the static entry for reliable TCPS reachability during role transitions.
 
 After setting `LOCAL_LISTENER`, `ALTER SYSTEM REGISTER;` and confirm with
-`lsnrctl status` that the service lists a `TCPS` handler on 2484.
+`lsnrctl status` that the service lists a `TCPS` handler on 1527.
 
 ### 6.2 Firewall
 
-- Open **2484/tcp** between every client subnet (app servers, ORDS hosts, DBA
+- Open **1527/tcp** between every client subnet (app servers, ORDS hosts, DBA
   jump-hosts) and the DB host, and between **primary ↔ standby** for redo transport.
-- Keep 1521 open during coexistence; **close it** only after §14 confirms no legitimate
+- Keep 1526 open during coexistence; **close it** only after §14 confirms no legitimate
   traffic remains.
 - TLS handshakes are larger than the cleartext connect packet; ensure firewalls / load
   balancers don't clip MTU or impose aggressive idle timeouts that kill the handshake
@@ -396,7 +399,7 @@ Only if the app must reuse an Oracle auto-login wallet. Requires `oraclepki.jar`
 ### Connect strings — Easy Connect Plus
 
 ```
-jdbc:oracle:thin:@tcps://db01.prod.csob.cz:2484/APPSVC.prod.csob.cz?ssl_server_dn_match=true
+jdbc:oracle:thin:@tcps://db01.prod.csob.cz:1527/APPSVC.prod.csob.cz?ssl_server_dn_match=true
 ```
 
 Or a TNS descriptor with `(PROTOCOL=TCPS)` and
@@ -451,7 +454,7 @@ Client `tnsnames.ora`:
 ```
 APPSVC_TLS =
   (DESCRIPTION =
-    (ADDRESS = (PROTOCOL = TCPS)(HOST = db01.prod.csob.cz)(PORT = 2484))
+    (ADDRESS = (PROTOCOL = TCPS)(HOST = db01.prod.csob.cz)(PORT = 1527))
     (CONNECT_DATA = (SERVICE_NAME = APPSVC.prod.csob.cz))
     (SECURITY = (SSL_SERVER_CERT_DN = "CN=db01.prod.csob.cz,OU=DBA,O=CSOB,L=Praha,C=CZ")))
 ```
@@ -469,9 +472,9 @@ ORDS is a Java app; it is a JDBC thin client to the DB. Two things to configure:
    `ords_conf`/`conf/apex.xml` depending on ORDS version), either:
    - set `db.connectionType=customurl` and `db.customURL` to a TCPS JDBC URL:
      ```
-     db.customURL=jdbc:oracle:thin:@tcps://db01.prod.csob.cz:2484/APEXSVC.prod.csob.cz?ssl_server_dn_match=true
+     db.customURL=jdbc:oracle:thin:@tcps://db01.prod.csob.cz:1527/APEXSVC.prod.csob.cz?ssl_server_dn_match=true
      ```
-   - or, on newer ORDS, set `db.hostname`, `db.port=2484`, `db.servicename`, and
+   - or, on newer ORDS, set `db.hostname`, `db.port=1527`, `db.servicename`, and
      `db.protocol=tcps`.
 2. **ORDS JVM truststore.** ORDS must trust the CSOB CA. Pass the truststore to the ORDS
    JVM (in the ORDS/Tomcat/standalone startup):
@@ -496,14 +499,14 @@ trust B's cert:
   chain (the CSOB CA — usually already present in A's own TLS wallet, since the same
   internal CA issues both certs). So **A's existing auto-login TLS wallet already trusts
   B** if both certs come from the CSOB CA. No extra wallet needed.
-- The DB link's connect descriptor must use `PROTOCOL=TCPS` and port 2484, and should
+- The DB link's connect descriptor must use `PROTOCOL=TCPS` and port 1527, and should
   include `SSL_SERVER_CERT_DN` / rely on `SSL_SERVER_DN_MATCH=TRUE`.
 
 ```sql
 CREATE DATABASE LINK b_link
   CONNECT TO app_user IDENTIFIED BY "..."
   USING '(DESCRIPTION=
-           (ADDRESS=(PROTOCOL=TCPS)(HOST=db02.prod.csob.cz)(PORT=2484))
+           (ADDRESS=(PROTOCOL=TCPS)(HOST=db02.prod.csob.cz)(PORT=1527))
            (CONNECT_DATA=(SERVICE_NAME=BSVC.prod.csob.cz))
            (SECURITY=(SSL_SERVER_CERT_DN="CN=db02.prod.csob.cz,OU=DBA,O=CSOB,L=Praha,C=CZ")))';
 ```
@@ -525,7 +528,7 @@ primary on role change). To run it over TLS:
    to the same CA.
 2. **Use a TCPS TNS alias** for transport:
    - Non-broker: `LOG_ARCHIVE_DEST_2='SERVICE=stdby_tls ... '` where `stdby_tls` is a
-     `tnsnames.ora` alias with `PROTOCOL=TCPS`, port 2484.
+     `tnsnames.ora` alias with `PROTOCOL=TCPS`, port 1527.
    - Broker: set the member's `DGConnectIdentifier` (and `StaticConnectIdentifier` for
      startup/role changes) to a TCPS descriptor/alias.
 3. **`SSL_CLIENT_AUTHENTICATION=FALSE` is fine.** Redo transport authenticates via the
@@ -542,7 +545,7 @@ Broker property changes example:
 ```
 EDIT DATABASE 'stdby' SET PROPERTY DGConnectIdentifier='stdby_tls';
 EDIT DATABASE 'stdby' SET PROPERTY StaticConnectIdentifier=
-  '(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=stdby01.dr.csob.cz)(PORT=2484))
+  '(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=stdby01.dr.csob.cz)(PORT=1527))
      (CONNECT_DATA=(SERVICE_NAME=stdby_DGMGRL.dr.csob.cz)(INSTANCE_NAME=stdby)(SERVER=DEDICATED)))';
 ```
 
@@ -582,7 +585,7 @@ server cert switches to the new chain.
   # For dates, export the user cert and read with openssl:
   openssl x509 -in /tmp/server.cer -noout -enddate -subject
   # Or probe the live endpoint:
-  echo | openssl s_client -connect db01.prod.csob.cz:2484 2>/dev/null | openssl x509 -noout -enddate -subject
+  echo | openssl s_client -connect db01.prod.csob.cz:1527 2>/dev/null | openssl x509 -noout -enddate -subject
   ```
 - Add a monitoring check (OEM metric extension or a cron+`openssl s_client` probe) that
   alerts at **T-45 / T-30 / T-14** days before `notAfter`.
@@ -604,7 +607,7 @@ server cert switches to the new chain.
 | **FQDN vs shortname** | DN match fails only from some clients | Ensure every connect-string name is a SAN (or CN); mixed-case service names are irrelevant, but the **host** must match. |
 | **ojdbc jars** | `ClassNotFound oracle.security.pki...` | You only need `oraclepki/osdt_*` jars when using an **Oracle wallet**; JKS truststore needs none. |
 | **Native + TLS double-encrypt** | High CPU on TCPS; slow throughput | Don't force `ENCRYPTION_SERVER=REQUIRED` for TCPS-only paths (see §5). |
-| **Adding endpoint via reload** | New 2484 port never appears | Adding an ADDRESS needs full listener stop/start, not reload. |
+| **Adding endpoint via reload** | New 1527 port never appears | Adding an ADDRESS needs full listener stop/start, not reload. |
 | **`-auto_login_local` after host move** | Wallet won't open on DR host | Use plain `-auto_login` for network-cert wallets. |
 
 ### Error → cause reference
@@ -616,8 +619,8 @@ server cert switches to the new chain.
 | **ORA-28865: SSL connection has closed** | Listener handshake OK, but the **DB server process** has no wallet — `WALLET_LOCATION` missing from the server **sqlnet.ora** (listener.ora alone is not enough) | Add `WALLET_LOCATION` to the DB's sqlnet.ora (watch the SEPS conflict, §4.2) and retry. Verified cause on 19c. |
 | **ORA-29024: Certificate validation failure** | Client can't validate server chain | Client truststore/wallet missing the CA (root/intermediate); server presenting incomplete chain. |
 | **ORA-28860: Fatal SSL error** | Generic handshake failure | Combine with sqlnet trace; often version/cipher mismatch or wallet issues. |
-| **ORA-12560 / TNS-12560** | Protocol adapter error | Endpoint not listening (2484 not up), or LOCAL_LISTENER not registering TCPS. `lsnrctl status`. |
-| **ORA-12170: TNS connect timeout** | No answer on port | Firewall closed 2484, or MTU/handshake stall. |
+| **ORA-12560 / TNS-12560** | Protocol adapter error | Endpoint not listening (1527 not up), or LOCAL_LISTENER not registering TCPS. `lsnrctl status`. |
+| **ORA-12170: TNS connect timeout** | No answer on port | Firewall closed 1527, or MTU/handshake stall. |
 
 ### Diagnostic commands
 
@@ -626,7 +629,7 @@ server cert switches to the new chain.
 lsnrctl status
 
 # Probe the TLS endpoint, show chain + negotiated version/cipher
-echo | openssl s_client -connect db01.prod.csob.cz:2484 -showcerts
+echo | openssl s_client -connect db01.prod.csob.cz:1527 -showcerts
 
 # Server-side SQL*Net trace (temporary) in sqlnet.ora:
 #   TRACE_LEVEL_SERVER = 16
@@ -643,17 +646,17 @@ Per DB/host:
 - [ ] TLS wallet created (auto-login), perms `600`/`700`, **separate from TDE keystore**.
 - [ ] CSR issued with CN=FQDN + SANs; root+intermediate+user cert imported (correct order).
 - [ ] `orapki wallet display` shows a complete chain.
-- [ ] listener.ora: TCPS 2484 endpoint added; `WALLET_LOCATION` set; `SSL_CLIENT_AUTHENTICATION=FALSE`.
+- [ ] listener.ora: TCPS 1527 endpoint added; `WALLET_LOCATION` set; `SSL_CLIENT_AUTHENTICATION=FALSE`.
 - [ ] sqlnet.ora audited for a pre-existing `WALLET_LOCATION` / SEPS `WALLET_OVERRIDE` (merge, don't append — §4.2).
 - [ ] sqlnet.ora: `WALLET_LOCATION` (required for the server process, §4.2), `SSL_VERSION=1.2`, cipher suites, ANO params decided (§5).
 - [ ] `LOCAL_LISTENER` (or static reg) advertises TCPS; `ALTER SYSTEM REGISTER;`.
-- [ ] Full `lsnrctl stop/start`; `lsnrctl status` shows TCPS handler on 2484.
-- [ ] Firewall: 2484 open (clients, and primary↔standby).
+- [ ] Full `lsnrctl stop/start`; `lsnrctl status` shows TCPS handler on 1527.
+- [ ] Firewall: 1527 open (clients, and primary↔standby).
 - [ ] `openssl s_client` and `03_verify_tls.sql` confirm TLS session.
 - [ ] Clients migrated: JDBC truststore + tcps URL; OCI wallet+tns; ORDS pool+truststore.
 - [ ] DB links repointed to TCPS; Data Guard transport moved to TCPS alias; broker validated.
 - [ ] Cert expiry monitoring in place (T-45/30/14 alerts).
-- [ ] Monitoring confirms **zero** legitimate 1521 traffic → remove 1521 endpoint, restart listener.
+- [ ] Monitoring confirms **zero** legitimate 1526 traffic → remove 1526 endpoint, restart listener.
 
 ---
 

@@ -14,6 +14,7 @@ legacy OCI + APEX/ORDS application stack, internal enterprise CA, ASO licensed.
 | [docs/02-tls-guide.md](docs/02-tls-guide.md) | TLS runbook: wallets, CSR workflow, listener/sqlnet, JDBC/OCI/ORDS clients, DB links, DG redo transport, rotation, troubleshooting |
 | [docs/03-tde-guide.md](docs/03-tde-guide.md) | TDE: concepts, conversion decision matrix (online/offline/standby-first/rebuild), DG specifics, AIX/POWER performance, aftercare |
 | [docs/04-rollout-plan.md](docs/04-rollout-plan.md) | Fleet rollout: waves, pilot measurements, app coordination, per-DB runbooks, rollback, acceptance criteria |
+| [docs/05-faq.md](docs/05-faq.md) | DBA FAQ (TLS & TDE): common questions answered against this fleet's decisions, 19c-verified gotchas flagged |
 
 ## Scripts
 
@@ -27,8 +28,8 @@ Shell scripts are ksh, AIX-safe (no bash-isms, no GNU-only flags).
 
 The TDE SQL chain (01 → 02 → online encrypt → 04 → 05) and the TLS wallet
 script + TCPS listener/sqlnet config + verify SQL were executed end-to-end on a
-19.27 Linux CDB test instance (2026-07-07). RU/AIX-specific items still to
-confirm on the real fleet are listed in
+19.27 Linux CDB test instance (2026-07-07); the **fleet itself runs 19.30**.
+Remaining AIX-specific items to confirm on the real fleet are listed in
 [docs/03-tde-guide.md §14](docs/03-tde-guide.md#14-open-validation-items).
 Key verified facts: `FILE_NAME_CONVERT=NONE` fails on OMF (omit the clause);
 the DB's **sqlnet.ora** needs `WALLET_LOCATION` for TCPS (listener.ora alone →
