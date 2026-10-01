@@ -565,7 +565,7 @@ A database is **done** per track only when all items hold. Attach the evidence t
 |------|--------|------------|
 | Phase 0 / A0 / B0 | `scripts/preflight/01_db_inventory.sql` | yes |
 | Phase 0 / A0 / B0 | `scripts/preflight/02_host_preflight.sh` | yes |
-| A1, A3 | `scripts/tls/01_create_tls_wallet.sh --mode csr | import | display` | no |
+| A1, A3 | `scripts/tls/01_create_tls_wallet.sh --mode csr\|import\|display` | no |
 | A4, A5, A8 | `scripts/tls/02_listener_tcps_fragments.md` (config fragments) | — |
 | A6 | `scripts/tls/03_verify_tls.sh` + `03_verify_tls.sql` | yes |
 | A9, A10 | `scripts/tls/04_cleartext_session_report.sh` | yes |
