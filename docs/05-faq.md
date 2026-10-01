@@ -19,9 +19,11 @@ file is the complete set.
 ### Setup & architecture
 
 **1. Do I have to take an outage to add TLS?**
-No. It's dual-port coexistence — the same listener serves TCP 1526 *and* TCPS 1527
-at once. A full `lsnrctl stop/start` is needed only to **add** the 1527 endpoint
-(a `reload` won't pick up a new `ADDRESS`); clients keep working on 1526 throughout.
+No database outage. It's dual-port coexistence — the same listener serves TCP 1526
+*and* TCPS 1527 at once. A full `lsnrctl stop/start` is needed to **add** the 1527
+endpoint (a `reload` won't pick up a new `ADDRESS`): **existing sessions are untouched,
+but new connections are refused for the few seconds the listener is down**, so do it
+in a short low-traffic window. After that, clients keep working on 1526 throughout.
 See [TLS §1, §4.1](02-tls-guide.md#1-concepts--decisions).
 
 **2. Is this mutual TLS? Do clients need certificates?**
@@ -202,6 +204,10 @@ and don't double up with RMAN backup encryption pointlessly.
 
 **17. New tablespaces after go-live — encrypted automatically?**
 Set `ENCRYPT_NEW_TABLESPACES=ALWAYS` (default is `CLOUD_ONLY`) — the fleet standard.
+**Gotcha:** on 19c `ALWAYS` uses **AES128** unless the DDL names the algorithm
+(`TABLESPACE_ENCRYPTION_DEFAULT_ALGORITHM` only exists from 21c). Write
+`ENCRYPTION USING 'AES256' ENCRYPT` in DDL and run the AES256 check in
+`scripts/tde/06_new_tablespace_policy.sql`.
 The newer `TABLESPACE_ENCRYPTION` param is present on the fleet's 19.30 (finer-grained
 control), but `ENCRYPT_NEW_TABLESPACES=ALWAYS` stays the universal standard.
 See [TDE §8](03-tde-guide.md#8-new-tablespaces-born-encrypted).

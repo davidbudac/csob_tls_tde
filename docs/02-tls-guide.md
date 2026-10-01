@@ -119,7 +119,7 @@ per-query — and connection pools amortise it away almost entirely.
 | Wallet location | `/oracle/admin/$ORACLE_SID/wallet_tls` — separate from TDE keystore. |
 | TLS version | Default **TLS 1.2** (`SSL_VERSION=1.2`). The fleet's **19.30** DB stack supports TLS 1.3 (past the ~19.23 bar); enable 1.3 only after client-driver validation (see §4). |
 | Cipher suites | ECDHE + AES-GCM only (see §4). |
-| Cert key size | 2048-bit minimum; prefer **3072-bit** RSA for new certs (bank crypto policy). |
+| Cert key size | **4096-bit** RSA for new certs (bank crypto policy ≥ 3072). Note: 19c `orapki -keysize` only accepts 512/1024/2048/4096/8192/16384 — **3072 is not a valid value**, so 4096 is the standard. |
 | Cert subject | `CN` = server **FQDN**; request SANs for every name clients use. |
 | CA | Internal enterprise CA, CSR workflow. Import **root + intermediate** as trusted certs, then the user (server) cert. |
 
@@ -197,7 +197,7 @@ orapki wallet create \
 orapki wallet add \
   -wallet /oracle/admin/$ORACLE_SID/wallet_tls \
   -dn "CN=db01.prod.csob.cz,OU=DBA,O=CSOB,L=Praha,C=CZ" \
-  -keysize 3072 \
+  -keysize 4096 \
   -pwd "$WALLET_PWD"
 
 orapki wallet export \

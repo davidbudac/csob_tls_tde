@@ -25,7 +25,8 @@
 #   WALLET_DIR     - TLS wallet directory (default /oracle/admin/$ORACLE_SID/wallet_tls)
 #   CERT_DN        - full subject DN, CN must be the host FQDN
 #                    e.g. "CN=db01.prod.csob.cz,OU=DBA,O=CSOB,L=Praha,C=CZ"
-#   KEYSIZE        - RSA key size, 2048 or 3072 (default 3072)
+#   KEYSIZE        - RSA key size, 2048 or 4096 (default 4096). 19c orapki
+#                    accepts 512|1024|2048|4096|8192|16384 only -- NOT 3072.
 #   WALLET_PWD     - PKCS#12 wallet password (NOT echoed; prompt if unset)
 #
 # Import-mode variables:
@@ -47,7 +48,7 @@ set -e   # abort on any command failure (works in ksh)
 : ${ORACLE_SID:?"ORACLE_SID must be set"}
 : ${ORACLE_HOME:?"ORACLE_HOME must be set"}
 : ${WALLET_DIR:=/oracle/admin/${ORACLE_SID}/wallet_tls}
-: ${KEYSIZE:=3072}
+: ${KEYSIZE:=4096}
 : ${CSR_OUT:=/tmp/${ORACLE_SID}_tls.csr}
 : ${FORCE_NEW:=NO}
 

@@ -483,6 +483,10 @@ To ensure tablespaces created after go-live are encrypted automatically:
   encrypted even when the `CREATE TABLESPACE` statement omits an `ENCRYPTION`
   clause. Values: `DDL` (only if named in DDL — default is `CLOUD_ONLY`),
   `ALWAYS`, `CLOUD_ONLY`. **`ALWAYS` is the fleet standard.**
+  > **19c caveat:** `ALWAYS` encrypts with **AES128** unless the DDL names the
+  > algorithm (`TABLESPACE_ENCRYPTION_DEFAULT_ALGORITHM` is 21c+; absent on 19.27).
+  > Always write `ENCRYPTION USING 'AES256' ENCRYPT` in DDL and run the AES256
+  > compliance check in `scripts/tde/06_new_tablespace_policy.sql`.
 - **`TABLESPACE_ENCRYPTION` — present on 19.30.** The newer
   `TABLESPACE_ENCRYPTION` init parameter (from 23ai, backported to 19c around
   19.16+) offers finer control (`AUTO_ENABLE` etc.) and **is present on the

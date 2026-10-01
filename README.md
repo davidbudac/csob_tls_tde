@@ -13,13 +13,14 @@ legacy OCI + APEX/ORDS application stack, internal enterprise CA, ASO licensed.
 | [docs/01-key-management-decision.md](docs/01-key-management-decision.md) | OKV/HSM vs local software keystores; decided conventions (`WALLET_ROOT`, layout, backup, custody) |
 | [docs/02-tls-guide.md](docs/02-tls-guide.md) | Gentle TLS intro for DBAs new to it, then the TLS runbook: wallets, CSR workflow, listener/sqlnet, JDBC/OCI/ORDS clients, DB links, DG redo transport, rotation, troubleshooting |
 | [docs/03-tde-guide.md](docs/03-tde-guide.md) | Gentle TDE intro for DBAs new to it, then TDE detail: concepts, conversion decision matrix (online/offline/standby-first/rebuild), DG specifics, AIX/POWER performance, aftercare |
-| [docs/04-rollout-plan.md](docs/04-rollout-plan.md) | Fleet rollout: waves, pilot measurements, app coordination, per-DB runbooks, rollback, acceptance criteria |
+| [docs/04-rollout-plan.md](docs/04-rollout-plan.md) · [visual version](docs/rollout-plan.html) | Execution plan: phases 0–6 with gates, roles, pilot measurements, per-DB runbooks A (TLS) / B (TDE) step-by-step with scripts, app coordination, rollback, monitoring, acceptance criteria, risk register, fact-check log |
 | [docs/05-faq.md](docs/05-faq.md) | DBA FAQ (TLS & TDE): common questions answered against this fleet's decisions, 19c-verified gotchas flagged |
 
 ## Scripts
 
-- `scripts/tls/` — TLS wallet + CSR (`01`), listener/sqlnet/tns fragments (`02`), TCPS verification (`03` .sql/.sh)
-- `scripts/tde/` — `WALLET_ROOT` config (`01`), keystore + MEK (`02`), online tablespace encryption generator (`03`), status report (`04`), MEK rotation (`05`)
+- `scripts/tls/` — TLS wallet + CSR (`01`), listener/sqlnet/tns fragments (`02`), TCPS verification (`03` .sql/.sh), cleartext-session report from the listener log (`04`)
+- `scripts/tde/` — `WALLET_ROOT` config (`01`), keystore + MEK (`02`), online tablespace encryption generator (`03`), status report (`04`), MEK rotation (`05`), born-encrypted policy for new tablespaces (`06`)
+- `scripts/preflight/` — read-only readiness checks per DB/host: DB inventory + TDE method hint (`01` .sql), host preflight (`02` .sh)
 - `scripts/dg/` — TDE keystore sync primary → standby
 
 Shell scripts are ksh, AIX-safe (no bash-isms, no GNU-only flags).
